@@ -1,0 +1,10 @@
+mvn archetype:generate \
+      -DarchetypeGroupId=org.apache.maven.archetypes \
+      -DarchetypeArtifactId=maven-archetype-quickstart \
+      -DgroupId=starters \
+      -DartifactId=starters.wordcount
+
+mvn -Declipse.workspace=/Users/kartikay/Documents/workspace   eclipse:configure-workspace eclipse:eclipse
+
+spark-submit --class spark_mdp.App --master local \
+  target/sparkwordcount-0.0.1-SNAPSHOT.jar inputfile.txt 2
