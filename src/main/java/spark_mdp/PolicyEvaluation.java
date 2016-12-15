@@ -11,6 +11,7 @@ public class PolicyEvaluation {
 	static private Long num_states;
 	static private Long num_actions;
 	static private Double discount;
+	static private Double epsilon;
 	
 	static void main(String[] args) throws IllegalArgumentException{
 		JavaSparkContext sc = new JavaSparkContext(new SparkConf().setAppName("Policy Evaluation"));
@@ -18,6 +19,7 @@ public class PolicyEvaluation {
 		num_states = Long.parseLong(args[0]);
 		num_actions = Long.parseLong(args[1]);
 		discount = Double.parseDouble(args[2]);
+		epsilon = Double.parseDouble(args[3]);
 		
 		final Broadcast<Long> num_states_BroadCast = sc.broadcast(num_states);
 		final Broadcast<Long> num_actions_BroadCast = sc.broadcast(num_actions);
