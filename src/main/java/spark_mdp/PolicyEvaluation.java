@@ -71,6 +71,19 @@ public class PolicyEvaluation {
 		BlockMatrix vBar = Pi.multiply(r).persist(StorageLevel.MEMORY_AND_DISK_SER());
 		//vBar also serves as the initial approximation of v
 		
+		BlockMatrix v_prev = vBar;
+		BlockMatrix v_next = vBar.add(H.multiply(v_prev));
+		
+		int counter = 0; //counts number of iterations to convergence
+		
+		while(checkDistance(v_next, v_prev)){
+			v_prev = v_next;
+			v_next = vBar.add(H.multiply(v_prev));
+			counter++;
+		}
+		System.out.println(String.format("The Number of iterations required for convergenceare : %d", counter));
+		v_next.toIndexedRowMatrix().rows().saveAsTextFile(args[6]);
+		
 		sc.stop();
 	}
 	

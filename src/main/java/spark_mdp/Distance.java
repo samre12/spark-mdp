@@ -11,7 +11,7 @@ import org.apache.spark.mllib.linalg.distributed.BlockMatrix;
 import org.apache.spark.mllib.linalg.distributed.IndexedRow;
 
 public class Distance {
-	static JavaRDD<Double> covert(BlockMatrix v1, BlockMatrix v2) {
+	static JavaRDD<Double> convert(BlockMatrix v1, BlockMatrix v2) {
 		JavaRDD<IndexedRow> rows = v2.toIndexedRowMatrix().rows().toJavaRDD();
 		JavaRDD<Double> output = rows.map(new Function<IndexedRow, Double>() {
 			private static final long serialVersionUID = 2714620118336324819L;
