@@ -9,6 +9,8 @@ import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.mllib.linalg.distributed.*;
 import org.apache.spark.storage.StorageLevel;
 
+import scala.Tuple2;
+
 public class PolicyEvaluation {
 	static private Long num_states;
 	static private Long num_actions;
@@ -111,9 +113,18 @@ public class PolicyEvaluation {
 			v_next = vBar.add(H.multiply(v_prev));
 			counter++;
 		}
-		System.out.println(String.format("The Number of iterations required for convergenceare : %d", counter));
-		v_next.toIndexedRowMatrix().rows().saveAsTextFile(args[8]);
 		
+		System.out.println(String.format("The Number of iterations required for convergenceare : %d", counter)); 
+		
+		JavaPairRDD<Long, Double> output = v_next.toIndexedRowMatrix().rows().toJavaRDD().mapToPair(new PairFunction<IndexedRow, Long, Double>() {
+			private static final long serialVersionUID = 1885394162470517392L;
+
+			@Override
+			public Tuple2<Long, Double> call(IndexedRow t) throws Exception {
+				return new Tuple2<Long, Double>(t.index(), t.vector().apply(0));
+			}
+		});
+		output.saveAsTextFile(args[8]);
 		sc.stop();
 	}
 	
