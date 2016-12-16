@@ -21,7 +21,6 @@ public class PolicyEvaluation {
 		discount = Double.parseDouble(args[2]);
 		epsilon = Double.parseDouble(args[3]);
 		
-		final Broadcast<Long> num_states_BroadCast = sc.broadcast(num_states);
 		final Broadcast<Long> num_actions_BroadCast = sc.broadcast(num_actions);
 		final Broadcast<Double> discount_BroadCast = sc.broadcast(discount);
 		
@@ -77,5 +76,9 @@ public class PolicyEvaluation {
 	
 	static void checkAgruements(String[] args) throws IllegalArgumentException {
 		
+	}
+	
+	static boolean checkDistance(BlockMatrix v1, BlockMatrix v2) {
+		return false;
 	}
 }
