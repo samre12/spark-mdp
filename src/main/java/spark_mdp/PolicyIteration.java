@@ -104,6 +104,7 @@ public class PolicyIteration {
 		JavaPairRDD<Long, Long> policy_updated = argmax.mapToPair(new toPolicy());
 		v = new IndexedRowMatrix(argmax.map(new toV()).rdd(), num_states, 1).toBlockMatrix(); 
 		
+		//iterate until the policy converges
 		while (toContinue(policy_prev, policy_updated)) {
 			policy_prev = policy_updated;
 			
@@ -141,7 +142,6 @@ public class PolicyIteration {
 
 		@Override
 		public Tuple2<Long, Tuple2<Long, Double>> call(IndexedRow t) throws Exception {
-			// TODO Auto-generated method stub
             return new Tuple2<Long, Tuple2<Long,Double>>(Math.floorDiv(t.index(),num_actions)+1, 
             		new Tuple2<Long,Double>(Math.floorMod(t.index(), num_actions)+1,t.vector().apply(0)));
 		}

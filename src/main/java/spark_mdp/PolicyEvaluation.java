@@ -141,7 +141,7 @@ public class PolicyEvaluation {
 	}
 	
 	static void checkAgruements(String[] args) throws IllegalArgumentException {
-		
+		//checks whether the arguments input by the user are correct 
 	}
 	
 	static JavaRDD<Double> convert(BlockMatrix v1, BlockMatrix v2) {
