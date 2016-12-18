@@ -56,7 +56,8 @@ public class PolicyIteration {
 					Double probability = Double.parseDouble(sub_parts[2]);
 					total += probability;
 					
-					output.add(new MatrixEntry((state1 - 1) * num_actions_BroadCast.value() + action, state2, discount_BroadCast.value() * probability));
+					output.add(new MatrixEntry((state1 - 1) * num_actions_BroadCast.value() + action, 
+							state2, discount_BroadCast.value() * probability));
 				}
 				if (Math.abs(1 - total) > error_bound) {
 					throw new Exception(String.format(Strings.PROBABILITY_ERROR, state1));
@@ -65,7 +66,8 @@ public class PolicyIteration {
 			}
 		}).rdd(), num_states * num_actions, num_states).toBlockMatrix().persist(StorageLevel.MEMORY_AND_DISK_SER());
 		
-		JavaPairRDD<Long, Tuple2<Long, Double>> rewards = sc.textFile(args[5]).mapToPair(new PairFunction<String, Long, Tuple2<Long, Double>>() {
+		JavaPairRDD<Long, Tuple2<Long, Double>> rewards = sc.textFile(args[5])
+				.mapToPair(new PairFunction<String, Long, Tuple2<Long, Double>>() {
 			private static final long serialVersionUID = -5586934805066631406L;
 
 			@Override
@@ -92,35 +94,36 @@ public class PolicyIteration {
 		}).rdd(), num_states * num_actions, 1).toBlockMatrix().persist(StorageLevel.MEMORY_AND_DISK_SER());
 				
 		//generate initial policy
-		JavaPairRDD<Long, Tuple2<Long, Double>> initial = rewards.reduceByKey(new InitialReducer()).persist(StorageLevel.MEMORY_AND_DISK_SER());
+		JavaPairRDD<Long, Tuple2<Long, Double>> argmax = rewards.reduceByKey(new Reducer())
+				.persist(StorageLevel.MEMORY_AND_DISK_SER());
+		JavaPairRDD<Long, Long> policy_prev = argmax.mapToPair(new toPolicy());
+		BlockMatrix v = new IndexedRowMatrix(argmax.map(new toV()).rdd(), num_states, 1).toBlockMatrix();
 		
-		JavaPairRDD<Long, Long> policy = initial.mapToPair(new PairFunction<Tuple2<Long, Tuple2<Long, Double>>, Long, Long>() {
-			private static final long serialVersionUID = -8189058367107771592L;
-
-			@Override
-			public Tuple2<Long, Long> call(Tuple2<Long, Tuple2<Long, Double>> t) throws Exception {
-				return new Tuple2<Long, Long>(t._1, t._2._1);
-			}
-		});
+		argmax = r.add(P.multiply(v)).toIndexedRowMatrix().rows().toJavaRDD()
+				.mapToPair(new compute_argmax()).reduceByKey(new Reducer()).persist(StorageLevel.MEMORY_AND_DISK_SER());
+		JavaPairRDD<Long, Long> policy_updated = argmax.mapToPair(new toPolicy());
+		v = new IndexedRowMatrix(argmax.map(new toV()).rdd(), num_states, 1).toBlockMatrix(); 
 		
-		BlockMatrix v_initial = new IndexedRowMatrix(initial.map(new Function<Tuple2<Long, Tuple2<Long, Double>>, IndexedRow>() {
-			private static final long serialVersionUID = 3919362531916209746L;
-
-			@Override
-			public IndexedRow call(Tuple2<Long, Tuple2<Long, Double>> v1) throws Exception {
-				double[] value = {v1._2._2};
-				return new IndexedRow(v1._1, new DenseVector(value));
-			}
+		while (toContinue(policy_prev, policy_updated)) {
+			policy_prev = policy_updated;
 			
-		}).rdd(), num_states, 1).toBlockMatrix();
-		
+			argmax = r.add(P.multiply(v)).toIndexedRowMatrix().rows().toJavaRDD().mapToPair(new compute_argmax())
+					.reduceByKey(new Reducer()).persist(StorageLevel.MEMORY_AND_DISK_SER());
+			policy_updated = argmax.mapToPair(new toPolicy());
+			v = new IndexedRowMatrix(argmax.map(new toV()).rdd(), num_states, 1).toBlockMatrix(); 
+		}
+		policy_updated.saveAsTextFile(args[6]);
 	}
 	
 	static void checkAgruements(String[] args) throws IllegalArgumentException {
-		
+		// add conditions to check the arguments input by the user
 	}
 	
-	static class InitialReducer implements Function2<Tuple2<Long, Double>, Tuple2<Long, Double>, Tuple2<Long, Double>> {
+	static boolean toContinue(JavaPairRDD<Long, Long> prev, JavaPairRDD<Long, Long> updated) {
+		return false;
+	}
+	
+	static class Reducer implements Function2<Tuple2<Long, Double>, Tuple2<Long, Double>, Tuple2<Long, Double>> {
 		private static final long serialVersionUID = -2748441034957608709L;
 
 		@Override
@@ -131,6 +134,35 @@ public class PolicyIteration {
 				return v1;
 			}
 		}
-		
+	}
+	
+	static class compute_argmax implements PairFunction<IndexedRow, Long, Tuple2<Long, Double>> {
+		private static final long serialVersionUID = -573997149793985318L;
+
+		@Override
+		public Tuple2<Long, Tuple2<Long, Double>> call(IndexedRow t) throws Exception {
+			// TODO Auto-generated method stub
+            return new Tuple2<Long, Tuple2<Long,Double>>(Math.floorDiv(t.index(),num_actions)+1, 
+            		new Tuple2<Long,Double>(Math.floorMod(t.index(), num_actions)+1,t.vector().apply(0)));
+		}
+	}
+	
+	static class toPolicy implements PairFunction<Tuple2<Long, Tuple2<Long, Double>>, Long, Long> {
+        private static final long serialVersionUID = -8189058367107771592L;
+
+        @Override
+        public Tuple2<Long, Long> call(Tuple2<Long, Tuple2<Long, Double>> t) throws Exception {
+            return new Tuple2<Long, Long>(t._1, t._2._1);
+        }
+    }
+	
+	static class toV implements Function<Tuple2<Long, Tuple2<Long, Double>>, IndexedRow> {
+		private static final long serialVersionUID = -8783965313986638606L;
+
+		@Override
+		public IndexedRow call(Tuple2<Long, Tuple2<Long, Double>> v1) throws Exception {
+			double[] value = {v1._2._2};
+			return new IndexedRow(v1._1, new DenseVector(value));
+		}
 	}
 }
