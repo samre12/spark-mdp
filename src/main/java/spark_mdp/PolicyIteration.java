@@ -95,14 +95,16 @@ public class PolicyIteration {
 		JavaPairRDD<Long, Tuple2<Long, Double>> initial = rewards.reduceByKey(new InitialReducer()).persist(StorageLevel.MEMORY_AND_DISK_SER());
 		
 		JavaPairRDD<Long, Long> policy = initial.mapToPair(new PairFunction<Tuple2<Long, Tuple2<Long, Double>>, Long, Long>() {
+			private static final long serialVersionUID = -8189058367107771592L;
 
 			@Override
 			public Tuple2<Long, Long> call(Tuple2<Long, Tuple2<Long, Double>> t) throws Exception {
 				return new Tuple2<Long, Long>(t._1, t._2._1);
 			}
-		}).persist(StorageLevel.MEMORY_AND_DISK_SER());
+		});
 		
 		BlockMatrix v_initial = new IndexedRowMatrix(initial.map(new Function<Tuple2<Long, Tuple2<Long, Double>>, IndexedRow>() {
+			private static final long serialVersionUID = 3919362531916209746L;
 
 			@Override
 			public IndexedRow call(Tuple2<Long, Tuple2<Long, Double>> v1) throws Exception {
@@ -119,6 +121,7 @@ public class PolicyIteration {
 	}
 	
 	static class InitialReducer implements Function2<Tuple2<Long, Double>, Tuple2<Long, Double>, Tuple2<Long, Double>> {
+		private static final long serialVersionUID = -2748441034957608709L;
 
 		@Override
 		public Tuple2<Long, Double> call(Tuple2<Long, Double> v1, Tuple2<Long, Double> v2) throws Exception {
