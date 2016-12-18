@@ -6,6 +6,7 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.*;
 import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.mllib.linalg.DenseVector;
 import org.apache.spark.mllib.linalg.distributed.*;
 import org.apache.spark.storage.StorageLevel;
 
@@ -61,16 +62,27 @@ public class PolicyEvaluation {
 			}
 		}).rdd(), num_states * num_actions, num_states).toBlockMatrix();
 		
-		BlockMatrix r = new CoordinateMatrix(sc.textFile(args[6]).map(new Function<String, MatrixEntry>() {
-			private static final long serialVersionUID = -5784388060110611464L;
+		JavaPairRDD<Long, Tuple2<Long, Double>> rewards = sc.textFile(args[5]).mapToPair(new PairFunction<String, Long, Tuple2<Long, Double>>() {
+			private static final long serialVersionUID = -5586934805066631406L;
 
 			@Override
-			public MatrixEntry call(String s) throws Exception {
-				String[] parts = s.split(",");
+			public Tuple2<Long, Tuple2<Long, Double>> call(String t) throws Exception {
+				String[] parts = t.split(",");
 				Long state = Long.parseLong(parts[0]);
 				Long action = Long.parseLong(parts[1]);
 				Double r = Double.parseDouble(parts[2]);
-				return new MatrixEntry((state - 1) * num_actions_BroadCast.value() + action, 1, r);
+				
+				return new Tuple2<Long, Tuple2<Long, Double>>(state, new Tuple2<Long, Double>(action, r));
+			}
+			
+		});
+		
+		BlockMatrix r = new IndexedRowMatrix(rewards.map(new Function<Tuple2<Long, Tuple2<Long, Double>>, IndexedRow>() {
+
+			@Override
+			public IndexedRow call(Tuple2<Long, Tuple2<Long, Double>> v1) throws Exception {
+				double[] value = {v1._2._2};
+				return new IndexedRow((v1._1 - 1) * num_actions_BroadCast.value() + v1._2._1, new DenseVector(value));
 			}
 			
 		}).rdd(), num_states * num_actions, 1).toBlockMatrix();

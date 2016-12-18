@@ -3,25 +3,28 @@ package spark_mdp;
 import java.util.ArrayList;
 
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.mllib.linalg.DenseVector;
 import org.apache.spark.mllib.linalg.distributed.BlockMatrix;
 import org.apache.spark.mllib.linalg.distributed.CoordinateMatrix;
 import org.apache.spark.mllib.linalg.distributed.IndexedRow;
+import org.apache.spark.mllib.linalg.distributed.IndexedRowMatrix;
 import org.apache.spark.mllib.linalg.distributed.MatrixEntry;
 import org.apache.spark.storage.StorageLevel;
+
+import scala.Tuple2;
 
 public class PolicyIteration {
 	static private Long num_states;
 	static private Long num_actions;
 	static private Double discount;
-	static private Integer distance;
-	static private Double epsilon;
-	static private BlockMatrix negative_I;
-	static private JavaSparkContext sc;
+	static private JavaSparkContext sc;  
 	
 	static void main(String[] args) throws IllegalArgumentException{
 		sc = new JavaSparkContext(new SparkConf().setAppName("Policy Evaluation"));
@@ -29,15 +32,13 @@ public class PolicyIteration {
 		num_states = Long.parseLong(args[0]);
 		num_actions = Long.parseLong(args[1]);
 		discount = Double.parseDouble(args[2]);
-		distance = Integer.parseInt(args[3]);
-		epsilon = Double.parseDouble(args[4]);
 		
 		final Broadcast<Long> num_actions_BroadCast = sc.broadcast(num_actions);
 		final Broadcast<Double> discount_BroadCast = sc.broadcast(discount);
-		
+	
 		checkAgruements(args);
 		
-		BlockMatrix P = new CoordinateMatrix(sc.textFile(args[5]).flatMap(new FlatMapFunction<String, MatrixEntry>() {
+		BlockMatrix P = new CoordinateMatrix(sc.textFile(args[4]).flatMap(new FlatMapFunction<String, MatrixEntry>() {
 			private static final long serialVersionUID = 328024652664764883L;
 			
 			private static final double error_bound = 1e-6;
@@ -62,50 +63,71 @@ public class PolicyIteration {
 				}
 				return output;
 			}
-		}).rdd(), num_states * num_actions, num_states).toBlockMatrix();
+		}).rdd(), num_states * num_actions, num_states).toBlockMatrix().persist(StorageLevel.MEMORY_AND_DISK_SER());
 		
-		BlockMatrix r = new CoordinateMatrix(sc.textFile(args[6]).map(new Function<String, MatrixEntry>() {
-			private static final long serialVersionUID = -5784388060110611464L;
+		JavaPairRDD<Long, Tuple2<Long, Double>> rewards = sc.textFile(args[5]).mapToPair(new PairFunction<String, Long, Tuple2<Long, Double>>() {
+			private static final long serialVersionUID = -5586934805066631406L;
 
 			@Override
-			public MatrixEntry call(String s) throws Exception {
-				String[] parts = s.split(",");
+			public Tuple2<Long, Tuple2<Long, Double>> call(String t) throws Exception {
+				String[] parts = t.split(",");
 				Long state = Long.parseLong(parts[0]);
 				Long action = Long.parseLong(parts[1]);
 				Double r = Double.parseDouble(parts[2]);
-				return new MatrixEntry((state - 1) * num_actions_BroadCast.value() + action, 1, r);
+				
+				return new Tuple2<Long, Tuple2<Long, Double>>(state, new Tuple2<Long, Double>(action, r));
 			}
 			
-		}).rdd(), num_states * num_actions, 1).toBlockMatrix();
+		}).persist(StorageLevel.MEMORY_AND_DISK_SER());
 		
-		negative_I = new CoordinateMatrix(sc.textFile(args[5]).map(new Function<String, MatrixEntry>() {
-			private static final long serialVersionUID = -1259242904008895467L;
+		BlockMatrix r = new IndexedRowMatrix(rewards.map(new Function<Tuple2<Long, Tuple2<Long, Double>>, IndexedRow>() {
+			private static final long serialVersionUID = 7303753406986104844L;
 
 			@Override
-			public MatrixEntry call(String v1) throws Exception {
-				String[] parts = v1.split("#");
-				Long state = Long.parseLong(parts[0]);
-				return new MatrixEntry(state, state, -1);
+			public IndexedRow call(Tuple2<Long, Tuple2<Long, Double>> v1) throws Exception {
+				double[] value = {v1._2._2};
+				return new IndexedRow((v1._1 - 1) * num_actions_BroadCast.value() + v1._2._1, new DenseVector(value));
 			}
-		}).rdd(), num_states, num_states).toBlockMatrix().persist(StorageLevel.MEMORY_AND_DISK_SER());
+			
+		}).rdd(), num_states * num_actions, 1).toBlockMatrix().persist(StorageLevel.MEMORY_AND_DISK_SER());
+				
+		//generate initial policy
+		JavaPairRDD<Long, Tuple2<Long, Double>> initial = rewards.reduceByKey(new InitialReducer()).persist(StorageLevel.MEMORY_AND_DISK_SER());
+		
+		JavaPairRDD<Long, Long> policy = initial.mapToPair(new PairFunction<Tuple2<Long, Tuple2<Long, Double>>, Long, Long>() {
+
+			@Override
+			public Tuple2<Long, Long> call(Tuple2<Long, Tuple2<Long, Double>> t) throws Exception {
+				return new Tuple2<Long, Long>(t._1, t._2._1);
+			}
+		}).persist(StorageLevel.MEMORY_AND_DISK_SER());
+		
+		BlockMatrix v_initial = new IndexedRowMatrix(initial.map(new Function<Tuple2<Long, Tuple2<Long, Double>>, IndexedRow>() {
+
+			@Override
+			public IndexedRow call(Tuple2<Long, Tuple2<Long, Double>> v1) throws Exception {
+				double[] value = {v1._2._2};
+				return new IndexedRow(v1._1, new DenseVector(value));
+			}
+			
+		}).rdd(), num_states, 1).toBlockMatrix();
+		
 	}
 	
 	static void checkAgruements(String[] args) throws IllegalArgumentException {
 		
 	}
 	
-	static JavaRDD<Double> convert(BlockMatrix v1, BlockMatrix v2) {
-		JavaRDD<IndexedRow> rows = v1.add(v2.multiply(negative_I)).toIndexedRowMatrix().rows().toJavaRDD();
-		JavaRDD<Double> output = rows.map(new Function<IndexedRow, Double>() {
-			private static final long serialVersionUID = 2714620118336324819L;
+	static class InitialReducer implements Function2<Tuple2<Long, Double>, Tuple2<Long, Double>, Tuple2<Long, Double>> {
 
-			@Override
-			public Double call(IndexedRow row) throws Exception {
-				return row.vector().apply(0);
+		@Override
+		public Tuple2<Long, Double> call(Tuple2<Long, Double> v1, Tuple2<Long, Double> v2) throws Exception {
+			if (v2._2 > v1._2) {
+				return v2;
+			} else {
+				return v1;
 			}
-			
-		});
-		return output;
+		}
+		
 	}
-
 }
