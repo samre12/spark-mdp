@@ -1,2 +1,3 @@
-# SPARK_MDP
-This repository is for open source implementation of policy evaluation, policy iteration and value iteration for a given MDP using Apache-Spark as the computation framework.
+# Sparse MDPs in Spark
+[![dep3](https://img.shields.io/badge/status-in%20progress-green.svg)](https://github.com/samre12/deep-trading-agent/)<br>
+Policy Evaluation and Iteration implementation in Spark for MDPs with sparse transition matrices.
